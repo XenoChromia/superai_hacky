@@ -2,9 +2,10 @@ import "~/styles/globals.css";
 
 import { type Metadata } from "next";
 import { Geist } from "next/font/google";
+import { ClerkProvider, SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 
 export const metadata: Metadata = {
-  title: "HealthyDayz",
+  title: "Genki-San",
   description: "A health app assisted by AI and medical professionals",
   icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
@@ -18,8 +19,13 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${geist.variable}`}>
-      <body>{children}</body>
-    </html>
+    <ClerkProvider>
+      <html lang="en">
+      <body className={`${geist.variable} ${geist.variable} antialiased`}>
+      {children}
+      </body>
+      </html>
+    </ClerkProvider>
+
   );
 }
