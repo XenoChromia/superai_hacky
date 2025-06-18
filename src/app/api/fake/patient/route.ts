@@ -4,6 +4,7 @@ import { faker } from "@faker-js/faker";
 import { NextResponse } from "next/server";
 import { db } from "~/server/db";  // adjust to your actual path
 import { patients } from "~/server/db/schema"; // your patients table schema
+import {eq} from "drizzle-orm";
 
 export async function GET(req: any, res: any) {
   const user = await currentUser();

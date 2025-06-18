@@ -12,29 +12,40 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Check if role is already set
+    // Get the current user to check existing metadata
     const clerkUser = await clerkClient.users.getUser(userId);
     const currentRole = clerkUser.publicMetadata?.role as string | undefined;
 
-    if (currentRole !== 'patient') {
-      // Update Clerk user metadata
+    // Only set role if it doesn't exist (don't override existing roles)
+    if (!currentRole) {
+      // Update Clerk user metadata with patient role as default
       await clerkClient.users.updateUser(userId, {
         publicMetadata: {
           role: 'patient',
         },
       });
+      
+      console.log(`Set role 'patient' for user ${userId}`);
+    } else {
+      console.log(`User ${userId} already has role: ${currentRole}`);
     }
 
-    // Sync with your database (optional)
-    // const dbResult = await syncUserToDatabase(userId, 'patient');
+    // Sync with your database if needed
+    // const dbResult = await syncUserToDatabase(userId, currentRole || 'patient');
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ 
+      success: true, 
+      role: currentRole || 'patient' 
+    }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
     console.error('Error syncing user:', error);
-    return new Response(JSON.stringify({ success: false, error: 'Internal Server Error' }), {
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: 'Internal Server Error' 
+    }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
