@@ -24,8 +24,24 @@ export async function POST(request: NextRequest) {
     });
 
     const aiResponse = completion.choices[0]?.message.content || "I'm sorry, I couldn't process that request.";
-    
-    return NextResponse.json({ aiResponse });
+
+    try {
+    // Forward it to another server
+    const res = await fetch("http://172.16.7.179:8000/predict", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(aiResponse),
+    });
+
+    const data = await res.json();
+
+    return NextResponse.json({ data });
+  } catch (e) {
+    console.error(e);
+    return new NextResponse("Internal Server Error", { status: 500 });
+  }    
   } catch (error) {
     console.error('AI API Error:', error);
     return NextResponse.json(
