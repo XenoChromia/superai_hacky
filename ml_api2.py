@@ -1,160 +1,322 @@
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
+
+
+# Import your existing function (assuming it's in a file named model_logic.py)
+# from model_logic import process_model_output
 import re
 import json
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
-from random import randint
-from typing import Any
 
 def process_model_output(string_value):
     
     def extract_json(text):
-        """Extracts the JSON content from between <json> tags."""
         pattern = r'<json>(.*?)</json>'
         match = re.search(pattern, text, re.DOTALL)
+
         if match:
-            return match.group(1).strip()
-        return None
-
-    def validate_and_route(string_value):
-        """
-        Validates the input JSON and routes a response for special cases 
-        like greetings or profanity.
-        """
-        json_str = extract_json(string_value)
-        if not json_str:
-            raise ValueError("Input format error: Missing <json> tags.")
-            
-        extracted_json = json.loads(json_str)
-
-        # --- Safeguard Logic ---
-
-        # 1. Profanity Check
-        profanity_list = ['fuck', 'shit', 'bitch', 'cunt', 'asshole', 'damn', 'hell']
-        symptoms = extracted_json.get('symptom', [])
-        if any(p_word in str(s).lower() for s in symptoms for p_word in profanity_list):
-            lecture = "Please refrain from using profane language. To ensure a productive and respectful environment, this conversation cannot proceed if such language is used. Please restate your symptoms professionally."
-            return [False, lecture]
-
-        # 2. Greeting/Vague Input Check (handles inputs like "hi")
-        is_gender_null = extracted_json.get('gender') in ('null', None)
-        is_age_null = extracted_json.get('age') in ('null', None)
-        no_symptoms = not symptoms
-
-        if is_gender_null and is_age_null and no_symptoms:
-            greeting = "Hello there! To help me understand your condition, please provide your symptoms, age, and gender."
-            return [False, greeting]
-        
-        # --- End of Safeguard Logic ---
-
-        # Original validation checks
-        if is_gender_null or is_age_null:
-            return [False, "It looks like some information is missing. Age and gender are required to make an assessment."]
-        
-        registered_symptoms = [
-            'cough', 'runny nose', 'fever', 'sore throat', 'headache', 'fatigue',
-            'body aches', 'congestion', 'wheezing', 'facial pressure', 'chills',
-            'high fever', 'shortness of breath', 'sneezing', 'mild fever',
-            'severe cough', 'dry cough', 'ear pressure or pain', 'stuffy nose', 
-            'postnasal drip', 'bad breath', 'tiredness', 'vomiting',
-            'swollen lymph nodes', 'pressure or pain in teeth', 'severe headache',
-            'muscle aches', 'diarrhea', 'bad taste in mouth', 'loss of appetite'
-        ]
-        
-        approved_count = sum(1 for s in symptoms if str(s).lower() in registered_symptoms)
-        
-        if approved_count < 2:
-            return [False, "Based on your input, there are not enough recognizable symptoms for an assessment. Please provide at least two symptoms."]
-        
-        return [True, None] # Validation passed
+            json_str = match.group(1).strip()
+            # print(json_str)
+            return json_str
     
-    # --- Main function logic starts here ---
-    try:
-        is_valid, message = validate_and_route(string_value)
-        if not is_valid:
-            # If validation fails, return the specific message from the validator
-            return [False, message]
-    except (ValueError, json.JSONDecodeError) as e:
-        # Catches malformed JSON, missing tags, or other parsing errors
-        return [False, f"Invalid input format: {e}. Please describe your symptoms, age, and gender."]
+    def validate_json(string_value):
+        extracted_json = json.loads(extract_json(string_value))
 
-    # --- Machine Learning Prediction Logic ---
-    # This part runs only if validation succeeds
+        if extracted_json['gender'] == 'null':
+            return [False, "User input has a missing input value!"] 
+        elif extracted_json['age'] == 'null':
+            return [False, "User input has a missing input value!"]
+        # elif len(extracted_json['symptom']) < 2:
+        #     return [False, "User input has insufficient matching symptoms in the database!"]
+        else:
+            registered_symptoms = [i.lower() for i in ['Cough', 'Runny Nose', 'Fever', 'Sore Throat', 'Headache', 'Fatigue',
+              'Body Aches', 'Congestion', 'Wheezing', 'Facial pressure', 'Chills',
+              'High Fever', 'Shortness of Breath', 'Sneezing', 'Mild Fever',
+              'Severe Cough', 'Dry Cough', 'Ear pressure or pain', 'Runny nose',
+              'Stuffy nose', 'Postnasal drip', 'Bad breath', 'Tiredness', 'Vomiting',
+              'Swollen Lymph Nodes', 'Pressure or pain in teeth', 'Severe Headache',
+              'Muscle Aches', 'Diarrhea', 'Bad taste in mouth', 'Loss of Appetite']]
+            approved_count=0
+            for s in extracted_json['symptom']:
+                if s in registered_symptoms:
+                    approved_count+=1
+            if approved_count < 2:
+                return [False, "User input has insufficient matching symptoms in the database!"]
+        return [True, None]
+    
+    check_missing_input_values = validate_json(string_value)
+    if not check_missing_input_values[0]:
+        return [True, check_missing_input_values[1]]
+
+    """example:
+    
+    <json>
+    {
+        "gender": "male",
+        "age": 12,
+        "symptom": ["cough", "runny nose"]
+    }
+    </json>"""
+
     data = pd.read_csv('data_encoded_nonscaled.csv')
     X = data.drop('label', axis=1)
     y = data['label']
 
+    # Try a different random state
+    new_random_state = 123  # You can iterate with different values
+
+    # Train-test split (70-30)
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, random_state=123, stratify=y
+        X, y, test_size=0.3, random_state=new_random_state, stratify=y
     )
 
+    # Check representation of each label in training data
+    # print("Label distribution in training data:")
+    # print(y_train.value_counts().sort_index())
+
+    # Initialize and fit final Random Forest
     rf_final = RandomForestClassifier(
-        n_estimators=200, max_depth=20, min_samples_split=5,
-        max_features='sqrt', random_state=42, n_jobs=-1
+        n_estimators=200,
+        max_depth=20,
+        min_samples_split=5,
+        max_features='sqrt',
+        random_state=42,
+        n_jobs=-1
     )
     rf_final.fit(X_train, y_train)
 
-    def get_predictions(input_json_str):
-        input_data = json.loads(input_json_str)
+    # Evaluate accuracy
+    train_acc = rf_final.score(X_train, y_train)
+    test_acc = rf_final.score(X_test, y_test)
+
+    # print(f"\nTraining Accuracy: {train_acc:.4f}")
+    # print(f"Test Accuracy: {test_acc:.4f}")
+
+    # # Detailed performance report
+    # print("\nClassification Report:")
+    # print(classification_report(y_test, rf_final.predict(X_test)))
+
+    # Feature importance
+    importances = pd.DataFrame({
+        'Feature': X.columns,
+        'Importance': rf_final.feature_importances_
+    }).sort_values('Importance', ascending=False)
+
+    # print("\nTop 10 Important Features:")
+    # print(importances.head(10))
+
+
+
+    def get_predictions(input_data):
+        """
+        Processes input with string gender and symptoms
+        Accepts either:
+        - JSON string (with <json> tags or raw JSON)
+        - Python dictionary
+        - Pandas DataFrame with string columns
         
+        Input format should contain:
+        {
+            "gender": "Male"/"Female" (case insensitive),
+            "age": number,
+            "symptom": ["symptom1", "symptom2", ...] (string list, case insensitive)
+        }
+        """
+        # Handle JSON string input
+        if isinstance(input_data, str):
+            # Extract JSON if wrapped in <json> tags
+            if input_data.strip().startswith('<json>'):
+                input_data = extract_json(input_data)
+            try:
+                input_data = json.loads(input_data)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON input: {e}")
+        
+        # Handle DataFrame input
+        elif isinstance(input_data, pd.DataFrame):
+            # Convert first row to dictionary
+            input_data = {
+                "gender": input_data['gender'].iloc[0],
+                "age": input_data['age'].iloc[0],
+                "symptom": [s for s in input_data.filter(regex='symptom/').values.flatten() 
+                        if pd.notna(s) and str(s).lower() != "none"]
+            }
+        
+        # Ensure we have a dictionary at this point
+        if not isinstance(input_data, dict):
+            raise ValueError("Input must be JSON string, dictionary, or DataFrame")
+        
+        # Create base DataFrame with all features initialized to 0
         aligned_data = pd.DataFrame(0, index=[0], columns=rf_final.feature_names_in_)
         
+        # Process gender (convert string to numeric)
         gender = str(input_data.get('gender', '')).lower()
-        aligned_data['gender'] = 1 if gender == 'male' else 0
+        if gender == 'male':
+            aligned_data['gender'] = 1
+        elif gender == 'female':
+            aligned_data['gender'] = 0
+        else:
+            print(f"Warning: Gender '{gender}' not recognized, defaulting to female")
+            aligned_data['gender'] = 0
         
+        # Process age
         aligned_data['age'] = int(input_data.get('age', 0))
         
+        # Process symptoms - convert to lowercase and strip whitespace
         symptoms = [str(s).lower().strip() for s in input_data.get('symptom', [])]
+        
+        # Activate symptom flags by matching column names
         model_features_lower = [f.lower() for f in rf_final.feature_names_in_]
         
         for symptom in symptoms:
             try:
-                col_idx = model_features_lower.index(symptom)
+                # Find matching column (case insensitive)
+                col_idx = model_features_lower.index(symptom.lower())
                 aligned_data.iloc[0, col_idx] = 1
             except ValueError:
-                # Silently ignore symptoms not in the model's feature list
-                pass
+                print(f"Warning: Symptom '{symptom}' not found in model features")
         
         return rf_final.predict(aligned_data)[0]
     
-    classification = {1: "RSV", 2: "sinus infection", 3: "common cold", 4: "covid 19", 5: "influenza"}
+    def extract_json(text):
+        pattern = r'<json>(.*?)</json>'
+        match = re.search(pattern, text, re.DOTALL)
 
-    json_str = extract_json(string_value)
-    prediction_code = get_predictions(json_str)
-    predicted_illness = classification.get(prediction_code, "an undetermined condition")
-
-    response_list = [
-        f'Based on what you shared, I suspect you have {predicted_illness}.',
-        f'Oh! It appears you may have {predicted_illness} based on your symptoms.',
-        f'Thanks for sharing! By the looks of it, you most likely have {predicted_illness}.'
-    ]
+        if match:
+            json_str = match.group(1).strip()
+            # print(json_str)
+            return json_str
     
-    return [True, response_list[randint(0, len(response_list) - 1)]]
+    def get_df(json_value):
+        data = json_value
 
-# --- FastAPI Application ---
+        # Prepare a dictionary to hold flattened data
+        flat_data = {
+            'gender': data['gender'],
+            'age': data['age'],
+        }
+
+        # Add up to 4 symptoms, fill missing with None
+        for i in range(4):
+            flat_data[f'symptom/{i}'] = data['symptom'][i] if i < len(data['symptom']) else "None"
+
+        # Create DataFrame
+        df = pd.DataFrame([flat_data])
+
+        return df
+    
+    classification = {
+        1: "RSV",
+        2: "sinus infection",
+        3: "common cold",
+        4: "covid 19",
+        5: "influenza"
+    }
+
+    # user_input = string_value
+    # model_output = prompt(instructions=instructions, user_prompt=user_input)
+    model_output = string_value
+    # print(model_output)
+
+    from random import randint
+    json_value = json.loads(extract_json(model_output))
+    convert_json_to_df = get_df(json_value)
+    prediction_grade = get_predictions(convert_json_to_df)
+    response_list = [f'Based on what you shared, I suspect you have {classification[int(prediction_grade)]}.',
+                     f'Oh! It appears you may have {classification[int(prediction_grade)]} based on your symptoms.',
+                     f'Thanks for sharing! By the looks of it, you most likely have {classification[int(prediction_grade)]}.',
+                     f'As far as I know, I suspect you have {classification[int(prediction_grade)]}.',
+                     f'Don\'t worry, based on your symptoms, I believe it is a common case of {classification[int(prediction_grade)]}.']
+    
+    return [True, response_list[randint(0, 4)]]
+    
+
+# app = FastAPI()
+
+# # Define a Pydantic model for the request body
+# class InputString(BaseModel):
+#     userMessage: str
+
+# @app.post("/predict")
+# async def predict(input_data: InputString):
+#     # Call your unchanged function with the raw input string
+#     success, message = process_model_output(input_data.userMessage)
+    
+#     if not success:
+#         # Return HTTP 400 if validation fails inside your function
+#         raise HTTPException(status_code=400, detail=message)
+    
+#     return {"result": message}
+
+# # To run:
+# # uvicorn your_script_name:app --reload
+# def run():
+#     # This function will start the uvicorn server hosting your FastAPI app
+#     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+
+# if __name__ == "__main__":
+#     run()
+# app = FastAPI()
+
+# # Define a Pydantic model for the request body
+
+# @app.post("/predict")
+# async def predict(input_data):
+#     print(input_data)
+#     # Call your unchanged function with the raw input string
+#     success, message = process_model_output(input_data)
+    
+#     if not success:
+#         # Return HTTP 400 if validation fails inside your function
+#         raise HTTPException(status_code=400, detail=message)
+    
+#     return {"result": message}
+
+def run():
+    # This function will start the uvicorn server hosting your FastAPI app
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+
+
+
+
+from fastapi import FastAPI, HTTPException, Request
+
+# @app.post("/predict")
+# async def predict(request: Request):
+#     input_data = await request.body()
+#     input_data = input_data.decode('utf-8')
+    
+#     success, message = process_model_output(input_data)
+    
+#     if not success:
+#         raise HTTPException(status_code=400, detail=message)
+    
+#     return {"result": message}
+
+
+
+from fastapi import FastAPI, HTTPException, Body
+from typing import Any
+
+# ... (keep your existing imports and process_model_output function)
+
 app = FastAPI()
 
 @app.post("/predict")
 async def predict(input_data: str = Body(..., media_type="text/plain")):
     print("Received input:", input_data)
-    
+    # Call your unchanged function with the raw input string
     success, message = process_model_output(input_data)
     
     if not success:
-        # If processing fails (due to validation, profanity, etc.),
-        # raise an HTTP 400 error with the specific message.
+        # Return HTTP 400 if validation fails inside your function
         raise HTTPException(status_code=400, detail=message)
     
-    # If successful, return a 200 OK with the result.
     return {"result": message}
-
-def run():
-    """This function starts the Uvicorn server to host the FastAPI app."""
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
 
 if __name__ == "__main__":
     run()
